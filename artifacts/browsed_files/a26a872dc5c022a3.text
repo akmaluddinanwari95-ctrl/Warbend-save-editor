@@ -1,0 +1,564 @@
+//------------------------------------------------
+//--- 010 Editor v13.0.1 Binary Template
+//
+//      File: Mount&Blade Savegame file
+//   Authors: Swyter
+//    E-mail: swyterzone+mab@gmail.com
+//   Version: 2023.07.05
+//   Purpose: Opens save files (Savegames/<mod name>/sg*.sav) on M&B 1.011 and Warband
+//            Format documented by cmpxchg8b: https://mbmodwiki.github.io/Savegame.html
+//  Category: Game
+// File Mask: sg*.sav
+//  ID Bytes: 57 52 44 52
+//------------------------------------------------
+typedef byte bool;
+
+const uint tf_hero = 0x00000010;
+local uint dont_load_regular_troop_inventories = true; /* swy: change this to match your mod's module.ini if the template can't auto-find it on its own */
+
+typedef struct
+{
+    uint tag_len;
+    if (tag_len && tag_len < 1000000)
+        char s[tag_len];
+} rgltag <read=read_rgltag>;
+
+string read_rgltag(struct rgltag& _thing)
+{
+    if (_thing.tag_len <= 0)
+        return "";
+    else
+        return _thing.s;
+}
+
+struct game_t
+{
+    struct header_t
+    {
+        char magic_number[4];
+        uint game_version;
+        uint module_version;
+        rgltag savegame_name, player_name;
+        uint player_level;
+        float date;
+    } header <open=true>;
+    
+    uint64 game_time;
+    uint random_seed, save_mode;
+    
+    if (game.header.game_version > 1136)
+    {
+        uint combat_difficulty, combat_difficulty_friendlies;
+        uint reduce_combat_ai, reduce_campaign_ai;
+        uint combat_speed;
+    }
+    
+    uint64 date_timer;
+    
+    uint hour, day, week, month, year; int unused;
+    float global_cloud_amount, global_haze_amount, average_difficulty, average_difficulty_period;
+    rgltag unused; bool unused;
+    uint tutorial_flags, default_prisoner_price;
+    int encountered_party_1_id, encountered_party_2_id;
+    int current_menu_id, current_site_id, current_entry_no;
+    uint current_mission_template_id;
+    
+    int32 	 	party_creation_min_random_value;
+    int32 		party_creation_max_random_value;
+    rgltag 	 	game_log;
+    int32 	 	unused_b[6];
+    int64 	 	unused_c;
+    float 	 	rest_period;
+    int32 	 	rest_time_speed;
+    int32 	 	rest_is_interactive;
+    int32 	rest_remain_attackable;
+    if (game.header.game_version > 1011)
+        rgltag 	class_names[9] <optimize=false>;
+    int32 	num_global_variables;
+    int64 	 	global_variables[num_global_variables];
+    
+    
+    struct trigger
+    {
+        int32 	 	status;
+        int64 	 	check_timer;
+        int64 	 	delay_timer;
+        int64 	 	rearm_timer;
+    };
+    
+    int32 	num_triggers;
+    trigger 	 	triggers[num_triggers];
+    
+    
+    struct  simple_trigger
+    {
+        int64 	 	check_timer;
+    };
+    
+    int32 	num_simple_triggers;
+    simple_trigger 	 	simple_triggers[num_simple_triggers];
+    
+    
+    typedef struct 
+    {
+        rgltag 	 	text;
+        char 	 	value[4]; /* swy: NOTE: int32, but contains four characters of string garbage data */
+        int32 	 	tableau_material_id;
+        if (game.header.game_version > 1011)
+            bool 	 	available;
+    } note <read=value>;
+    
+    typedef struct
+    {   /* swy: researched the flags and documented them here: https://mbcommands.fandom.com/wiki/Template:Op_quests#Quest_management :) */
+        const uint qust_active    = 0b0000000100000000; // quest is active
+        const uint qust_finished  = 0b0000001000000000; // quest is finished (???)
+        const uint qust_succeeded = 0b0000010000000000; // quest has succeeded
+        const uint qust_failed    = 0b0000100000000000; // quest has failed
+        const uint qust_concluded = 0b0001000000000000; // quest has concluded (often paired w/ fail/succeed or both)
+
+        int32 	 	progression;
+        int32 	 	giver_troop_id;
+        int32 	 	number;
+        float 	 	start_date;
+        rgltag 	 	title;
+        rgltag 	 	text;
+        rgltag 	 	giver;
+        note 	 	notes[(game.header.game_version > 1011) ? 16 : 8] <optimize=false>;
+        int32 	 	num_slots;
+        if (num_slots)
+           int64 	 	slots[num_slots];
+         
+        local string str_state = "";
+        if (progression & qust_active   ) str_state +=    "active, ";
+        if (progression & qust_finished ) str_state +=  "finished, ";
+        if (progression & qust_succeeded) str_state += "succeeded, ";
+        if (progression & qust_failed   ) str_state +=    "failed, ";
+        if (progression & qust_concluded) str_state += "concluded, ";
+        if (str_state != "")
+        {
+            str_state = SubStr(str_state, 0, Strlen(str_state) - 2); /* swy: remove the last/trailing ", " if any */
+            str_state = " -- [" + str_state + "]";
+        }
+        
+    } quest <read=Str("%s, %u, %i %s", read_rgltag(title), progression, giver_troop_id, str_state)>;
+    
+    
+    int32 		num_quests;
+    quest 	 	quests[num_quests] <optimize=false>;
+    
+    
+    struct info_page
+    {
+        note notes[16] <optimize=false>;
+    };
+    
+    
+    if (game.header.game_version > 1011)
+    {
+        int32 		num_info_pages;
+        info_page 	 	info_pages[num_info_pages] <optimize=false>;
+    }
+    
+    typedef struct
+    {
+        int32 		num_slots;
+        if (num_slots)
+            int64 	 	slots[num_slots];
+    } site <read=Str("%u slots", num_slots)>;
+    
+    
+    int32 	num_sites;
+    site 	 	sites[num_sites] <optimize=false>;
+    
+    
+    typedef struct 
+    {
+        int32 	 	num_slots;
+        if (num_slots)
+            int64 	 	slots[num_slots];
+        float 	 	relations[game.num_factions];
+        rgltag 	 	name;
+        bool 	 	renamed;
+        uint32 	 	color <format=hex>;
+        int32 	 	unused;
+        note 	 	notes[(game.header.game_version > 1011) ? 16 : 8] <optimize=false>;
+
+        /* swy: turn the 0xAARRGGBB (RGB) color format into 010 Editor's preferred 0xBBGGRR (BGR) */
+        local uint32 display_rgb_color = ((color >> (0*8)) & 0xFF) << (2*8) | /* 0x....BB -> 0x....BB -> 0xBB.... */
+                                         ((color >> (1*8)) & 0xFF) << (1*8) | /* 0x..GG.. -> 0x....GG -> 0x..GG.. */
+                                         ((color >> (2*8)) & 0xFF) << (0*8);  /* 0xRR.... -> 0x....RR -> 0x....RR */
+    } faction <read=read_rgltag(name), bgcolor=display_rgb_color>;
+    
+    int32 		num_factions;
+    faction 	 	factions[num_factions] <optimize=false>;
+    
+    
+    
+    typedef struct
+    {
+        float 	 	position_x;
+        float 	 	position_y;
+        float 	 	position_z;
+        float 	 	rotation;
+        float 	 	age;
+        int32 	 	flags <format=hex>;
+    } map_track<read=Str("{%.0f, %.0f} rot: %.2f age: %.2f",position_x, position_y, rotation, age)>;
+    
+    int32 	 	num_map_tracks;
+    map_track 	 	map_tracks[num_map_tracks];
+    
+    
+    typedef struct
+    {
+        int32 	 	num_parties_created;
+        int32 	 	num_parties_destroyed;
+        int32 	 	num_parties_destroyed_by_player;
+        int32 	 	num_slots;
+        if (num_slots)
+            int64 	 	slots[num_slots];
+
+    } party_template <read=Str("creat: %u destr: %u dest_player: %u", num_parties_created, num_parties_destroyed, num_parties_destroyed_by_player)>;
+    
+    int32 		num_party_templates;
+    party_template 	 	party_templates[num_party_templates] <optimize=false>;
+    
+    
+    typedef struct
+    {
+        int32 	 	troop_id;
+        int32 	 	num_troops;
+        int32 	 	num_wounded_troops;
+        int32 	 	flags;
+    } party_stack <read=Str("%u (%u) (%u)", troop_id, num_troops, num_wounded_troops)>;
+    typedef struct
+    {
+        rgltag 	 	id;
+        rgltag 	 	name;
+        uint64 	 	flags <format=hex>;
+        int32 	 	menu_id;
+        int32 	 	party_template_id;
+        int32 	 	faction_id;
+        int32 	 	personality;
+        int32 	 	default_behavior;
+        int32 	 	current_behavior;
+        int32 	 	default_behavior_object_id;
+        int32 	 	current_behavior_object_id;
+        float 	 	initial_position_x;
+        float 	 	initial_position_y;
+        float 	 	target_position_x;
+        float 	 	target_position_y;
+        float 	 	position_x;
+        float 	 	position_y;
+        float 	 	position_z;
+        int32 	 	num_stacks;
+        if (num_stacks)
+            party_stack 	 	stacks[num_stacks];
+        float 	 	bearing;
+        bool 	 	renamed;
+        rgltag 	 	extra_text;
+        float 	 	morale;
+        float 	 	hunger;
+        float 	 	unused;
+        float 	 	patrol_radius;
+        float 	 	initiative;
+        float 	 	helpfulness;
+        int32 	 	label_visible;
+        float 	 	bandit_attraction;
+        if ((game.header.game_version >=  900 && game.header.game_version < 1000) ||
+             game.header.game_version >= 1020)
+            int32 	 	marshall;// 	(game.header.game_version >= 900 && game.header.game_version < 1000) || game.header.game_version >= 1020
+        int64 	 	ignore_player_timer;
+        int32 	 	banner_map_icon_id;
+
+        if (game.header.game_version > 1136)
+        {
+            int32 	 	extra_map_icon_id; //	game.header.game_version > 1136
+            float 	 	extra_map_icon_up_down_distance; //	game.header.game_version > 1136
+            float 	 	extra_map_icon_up_down_frequency; //	game.header.game_version > 1136
+            float 	 	extra_map_icon_rotate_frequency; //	game.header.game_version > 1136
+            float 	 	extra_map_icon_fade_frequency; //	game.header.game_version > 1136
+        }
+
+        if (game.header.game_version > 1143) /* swy: probably something like this that was added after cmpxchg8b documented it in the wiki, check the actual initial version */
+            int32 _swy_fix_me_unk_pad; /* swy: (11 + 0xd) / 4 */
+
+        if (game.header.game_version > 1011) /* swy: FIXME: probably picked the wrong field, investigate a bit */
+            int32 	 	attached_to_party_id;
+        bool 	 	is_attached;
+
+        int32 	 	num_attached_party_ids;
+        if (num_attached_party_ids)
+            int32 	 	attached_party_ids[num_attached_party_ids];
+        int32 	 	num_particle_system_ids;
+        if (num_particle_system_ids)
+            int32 	 	particle_system_ids[num_particle_system_ids] <optimize=false>;
+        note 	 	notes[(game.header.game_version > 1011) ? 16 : 8] <optimize=false>;
+        int32 	 	num_slots;
+        if (num_slots)
+            int64 	 	slots[num_slots];
+    } party_t <read=read_rgltag(id)>;
+    
+    typedef struct 
+    {
+        int32 	 	valid;
+
+        local string buf = "";
+
+        if (valid)
+        {
+            int32 	 	raw_id; //	valid == 1
+            int32 	 	id; //	valid == 1
+            party_t	 	party;// 	valid == 1
+
+            buf = Str(" (%u, %u)", raw_id, id);
+        };
+    } party_record <read=Str("%u - %s %s", valid, valid ? read_rgltag(party.id) + " [" + read_rgltag(party.name) + "]" : "<?>", buf)>;
+    
+    int32 	num_party_records;
+    int32 	num_parties_created;
+
+    party_record 	 	party_records[num_party_records] <optimize=false>;
+    
+    
+    /* swy: use some heuristics to skip the player_party_stack chunk by reading ahead:
+            > Well, found a funky workaround by searching for known hex patterns; slot_counts (the first field of each troop) always get allocated in powers of two (256/512/...), and the
+            > 32-bit integers of these fields line up in multiples of four from the previous fields, so they are easy to find by scanning forward, and then the troop_count
+            > field (that we're interested in) has a not-too-big value bigger than zero but probably smaller than ~8000 that precedes it. */
+    local uint offset_end_of_party_records = FTell();
+    local int j = 0, offset = FTell(), data=0, prevdata;
+    
+    for (j=0; j<1768; j++, offset+=4)
+    {
+        prevdata = data; data = ReadUInt(offset);
+        Printf("%x: %x\n", offset, data);
+        
+        if (data == 64 || data == 128 || data == 256 || data == 512) /* swy: known slot_count values/sizes, always powers of two */
+            if (prevdata > 2 && prevdata < 8000)                     /* swy: constraint the possible num_troops to a reasonable range for a mod */
+            {
+                Printf("<- found num_troops at %x\n", offset - 4);
+                break;
+            }
+    }
+    
+
+    local uint i = 0;
+
+    struct player_party_stack
+    {
+        local uint cur_stack_no = i; i++;
+        local uint64 cur_stack_troop_flags = game.party_records[0].party.stacks[cur_stack_no].flags;
+        const uint hero = 0x00000010;
+
+        if (!(cur_stack_troop_flags & hero))
+        {
+            float 	 	experience; //	 !(cur_stack_troop_flags & hero)
+            int32 	 	num_upgradeable; //	 !(cur_stack_troop_flags & hero)
+        }
+        if (cur_stack_no < 32 && !(cur_stack_troop_flags & hero))
+            int32 	 	troop_dnas[32] <format=hex>; // 	cur_stack_no < 32 && !(cur_stack_troop_flags & hero)
+    };
+    
+    //player_party_stack 	 	player_party_stack_additional_info[game.party_records[0].party.num_stacks] <optimize=false>; // [player_party.num_stacks]
+
+
+    //int32 	num_map_event_records;
+    //int32 	num_map_events_created;
+    
+    struct map_event_t
+    {
+        rgltag 	 	unused;
+        int32 	 	type;
+        float 	 	position_x;
+        float 	 	position_y;
+        float 	 	land_position_x;
+        float 	 	land_position_y;
+        float 	 	unused;
+        float 	 	unused;
+        int32 	 	attacker_party_id;
+        int32 	 	defender_party_id;
+        int64 	 	battle_simulation_timer;
+        float 	 	next_battle_simulation;
+    };
+    
+    typedef struct
+    {
+        int32 	 	valid;
+        if (valid)
+        {
+            int32 	 	id; // 	valid == 1
+            map_event_t 	 	map_event; // 	valid == 1
+        }
+    } map_event_record <read=Str("valid: %u", valid)>;
+  
+    //map_event_record 	 	map_event_records[10];//num_map_event_records] <optimize=false>;
+
+    /* swy: skip the complex structures (map_event_record and especially player_party_stack, which
+            depends on knowing which troop IDs are heroes) and go to the troop array directly */
+    char unknown[(offset - 4) - FTell()]<bgcolor=cRed>; FSeek(offset - 4);
+    
+    int32 		num_troops;
+    
+    typedef struct
+    {
+        int32 	 	item_kind_id;
+        int32 	 	item_flags <format=hex>; // 		modifier (LineNo - 1 from item_modifiers.txt) = (item_flags >> 24) & 0xFF, ammo = item_flags & 0xFF, hit_points = item_flags & 0xFFFF
+    } item <read=Str("%i (modif: %u) (ammo: %u) (hit_poi: %u)", item_kind_id, (item_flags >> 24) & 0xFF, item_flags & 0xFF, item_flags & 0xFFFF)>;
+    
+    typedef struct
+    {
+        int32 	 	num_slots;
+        if (num_slots)
+            int64 	 	slots[num_slots];
+        int32 	 	attributes[4];
+        float 	 	proficiencies[7];
+        uint32 	 	skills[6];
+        if (game.header.game_version > 1011)
+            note 	 	notes[(game.header.game_version > 1011) ? 16 : 8] <optimize=false>;
+        uint64 	 	flags <format=hex>;
+        int32 	 	site_id_and_entry_no;
+        int32 	 	skill_points;
+        int32 	 	attribute_points;
+        int32 	 	proficiency_points;
+        if (game.header.game_version > 1011)
+            int32 	 	level;
+
+        local string buf = "";
+
+        buf += Str("race_%u | ", flags & 0xf);
+        if (flags & tf_hero) buf += "tf_hero | ";
+        if (flags & 0x00000020) buf += "tf_inactive | ";
+        if (flags & 0x00000040) buf += "tf_unkillable | ";
+        if (flags & 0x00000080) buf += "tf_allways_fall_dead | ";
+        if (flags & 0x00000100) buf += "tf_no_capture_alive | ";
+        if (flags & 0x00000400) buf += "tf_mntd | ";
+        if (flags & 0x00001000) buf += "tf_is_merchant | ";
+        if (flags & 0x00008000) buf += "tf_randomize_face | ";
+
+        if (flags & 0x00100000) buf += "tfg_boot | ";
+        if (flags & 0x00200000) buf += "tfg_armo | ";
+        if (flags & 0x00400000) buf += "tfg_hlm | ";
+        if (flags & 0x00800000) buf += "tfg_glv | ";
+        if (flags & 0x01000000) buf += "tfg_hor | ";
+        if (flags & 0x02000000) buf += "tfg_shld | ";
+        if (flags & 0x04000000) buf += "tfg_rngd | ";
+        if (flags & 0x08000000) buf += "tfg_pol | ";
+
+        /* swy: remove the last, right-most | */
+        if (flags && Strlen(buf) > 3) buf[Strlen(buf) - 2] = 0;
+
+        /* swy: here are some heuristic strategies to auto-find if we need to do an extended hero-style struct for common troops or not */
+        if (!(flags & tf_hero) && dont_load_regular_troop_inventories)
+        {
+            local bool toggle_it = false;
+
+            /* swy: try to retrieve the next potential `num_slots` field, which the game should only enlarge in multiples of 2,
+                    if it's something different, then the field is actually `gold` */
+            local int next_num_slots = ReadInt(FTell() + (4 * 1));
+            if ((next_num_slots != 0 && next_num_slots % 2 != 0))
+                toggle_it = true;
+
+            //local int note_2_tableau_material_id = ReadInt(FTell() + (4 * (1 + next_num_slots + 4 + 7 + 6)));
+            //local int note_2_tableau_available   = ReadInt(FTell() + (4 * (7)));
+
+            //if (!(note_2_tableau_material_id == -1 && note_2_tableau_available == 0))
+            //    toggle_it = true;
+
+
+            if (game.header.game_version > 1011) /* swy: check for the Warband field */
+            {
+                /* swy: if the field at the potential `health` offset for this entry looks
+                        like a float, then it may be an extended hero entry */
+                local float next_health = ReadFloat(FTell() + (4 * 2));
+    
+                if (next_health >= 1.f && next_health <= 9999.f)
+                    toggle_it = true;
+            }
+            else /* swy: check for M&B the 1.011 field */
+            {
+                /* swy: if the field at the potential `faction_id` offset for this entry looks
+                        like a small integer, then it may be an extended hero entry */
+                local float next_faction_id = ReadUInt(FTell() + (4 * 2));
+    
+                if (next_faction_id < 64)
+                    toggle_it = true;
+            }
+
+            if (toggle_it)
+            {
+                Warning(
+                    "Setting dont_load_regular_troop_inventories to `false` automatically for this file. " +
+                    "Seems like the right format given the troop data."
+                );
+                dont_load_regular_troop_inventories = false;
+            }
+        }
+
+        if ((flags & tf_hero) || dont_load_regular_troop_inventories == false)
+        {
+            if (game.header.game_version <= 1011)
+                int32 	 	faction_id;
+            uint32 	 	gold;                // (flags & tf_hero) || dont_load_regular_troop_inventories == false
+            int32 	 	experience;          //	(flags & tf_hero) || dont_load_regular_troop_inventories == false
+            float 	 	health;              //	(flags & tf_hero) || dont_load_regular_troop_inventories == false
+            if (game.header.game_version <= 1011)
+                int32 	 	level;          //	(flags & tf_hero) || dont_load_regular_troop_inventories == false
+            else
+                int32 	 	faction_id; //	(flags & tf_hero) || dont_load_regular_troop_inventories == false
+            item 	 	inventory_items[96]; //	(flags & tf_hero) || dont_load_regular_troop_inventories == false
+            item 	 	equipped_items[10];  // (flags & tf_hero) || dont_load_regular_troop_inventories == false
+
+            /* swy: see here for the format: https://forums.taleworlds.com/index.php?threads/online-face-code-generator-tool-tweak-facekeys-and-see-how-they-work.453145/ */
+            struct // 	(flags & tf_hero) || dont_load_regular_troop_inventories == false
+            {
+                uint64 a <format=hex>, b <format=hex>, c <format=hex>, d <format=hex>;
+            } face_keys <read=Str("0x%08x%08x%08x%08x%08x%08x%08x%08x", a >> 32, a,  b >> 32, b,  c >> 32, c,  d >> 32, d)>; /* swy: seems like %llx doesn't work here to print 64-bit numbers, so split it into two 32-bit ones per thing, first the top and then the bottom part */
+
+            if (game.header.game_version > 1011)
+            {
+                bool 	 	renamed; //	(flags & tf_hero) || dont_load_regular_troop_inventories == false
+    
+                if (renamed)
+                {
+                    rgltag 	 	name; //	renamed == true && ((flags & tf_hero) || dont_load_regular_troop_inventories == false)
+                    rgltag 	 	name_plural; //	renamed == true && ((flags & tf_hero) || dont_load_regular_troop_inventories == false)
+                    
+    
+                    buf += "renamed to " + name.s + " ";
+                }
+            }
+
+            //buf += ":: " + read_rgltag(game.factions[faction_id].name);
+            
+            if (game.header.game_version <= 1011)
+                note 	 	notes[(game.header.game_version > 1011) ? 16 : 8] <optimize=false>;
+        }
+        if (game.header.game_version > 1011)
+            int32 	 	class_no;
+        
+        if (game.header.game_version > 1011 || (flags & tf_hero))
+            buf += " // " + read_rgltag(notes[0].text);
+
+    } troop <read=Str("%s %s", (flags & tf_hero) ? "[h-]" : "[-]", buf)>;
+    
+    troop 	 	troops[num_troops] <optimize=false>;
+    
+    int32 	 	unused_d[42];
+    
+    typedef struct
+    {
+        int32 	 	num_slots;
+        int64 	 	slots 	[num_slots];
+    } item_kind <read=Str("%u", num_slots)>;
+    
+    int32 	    num_item_kinds;
+    item_kind   item_kind_[num_item_kinds] <optimize=false>;
+
+    struct
+    {
+        uint64 a <format=hex>, b <format=hex>;
+    } player_face_keys <read=Str("0x%08x%08x%08x%08x%016x%016x", a >> 32, a,  b >> 32, b,  0, 0)>; /* swy: seems like %llx doesn't work here to print 64-bit numbers, so split it into two 32-bit ones per thing, first the top and then the bottom part */
+    int32 	    player_kill_count;
+    int32 	    player_wounded_count;
+    int32 	    player_own_troop_kill_count;
+    int32       player_own_troop_wounded_count;
+} game <open=true, optimize=false>;
